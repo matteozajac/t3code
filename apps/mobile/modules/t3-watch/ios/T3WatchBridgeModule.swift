@@ -23,10 +23,13 @@ public final class T3WatchBridgeModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("setListenerReady") { [weak self, listenerID] (ready: Bool) in
+      // Mirror Expo's EventEmitter boundary: only emit is called through this weak
+      // reference. It schedules conversion and dispatch on JavaScriptActor and
+      // accesses SDK-owned Sendable state, never the module's mutable state.
+      nonisolated(unsafe) weak let emitter = self
       MainActor.assumeIsolated {
-        WatchSessionCoordinator.shared.setListener(ready ? { [weak self] id, commandJSON, expiresAt in
-          // Expo's emitter schedules conversion and dispatch on its JavaScript actor.
-          self?.emit(event: "onWatchCommand", payload: [
+        WatchSessionCoordinator.shared.setListener(ready ? { id, commandJSON, expiresAt in
+          emitter?.emit(event: "onWatchCommand", payload: [
             "id": id, "commandJSON": commandJSON, "expiresAt": expiresAt
           ] as [String: Any])
         } : nil, owner: listenerID)
