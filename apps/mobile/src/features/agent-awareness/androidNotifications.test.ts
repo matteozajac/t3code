@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
     clear?: ReturnType<typeof vi.fn>;
     openLiveUpdateSettings?: ReturnType<typeof vi.fn>;
   } | null,
-  config: { scheme: ["t3code-preview"], extra: { iosPersonalTeamBuild: false } },
+  config: {
+    scheme: ["t3code-preview"],
+    extra: { iosPersonalTeamBuild: false, agentAwarenessPushEnabled: true },
+  },
   requireModule: vi.fn(),
 }));
 
@@ -34,6 +37,7 @@ beforeEach(() => {
   mocks.openSettings.mockReset().mockResolvedValue(undefined);
   mocks.native = { configure: vi.fn(), clear: vi.fn() };
   mocks.config.extra.iosPersonalTeamBuild = false;
+  mocks.config.extra.agentAwarenessPushEnabled = true;
   mocks.requireModule.mockReset().mockImplementation(() => mocks.native);
 });
 
@@ -94,6 +98,15 @@ describe("Android native notification capability", () => {
     const { supportsAgentAwarenessPush } = await import("./capabilities");
     expect(supportsAgentAwarenessPush()).toBe(true);
     mocks.config.extra.iosPersonalTeamBuild = true;
+    expect(supportsAgentAwarenessPush()).toBe(false);
+    expect(mocks.requireModule).not.toHaveBeenCalled();
+  });
+
+  it("does not register a paid-team fork for the official relay's APNs delivery", async () => {
+    mocks.os = "ios";
+    mocks.config.extra.agentAwarenessPushEnabled = false;
+    const { supportsAgentAwarenessPush } = await import("./capabilities");
+    expect(mocks.config.extra.iosPersonalTeamBuild).toBe(false);
     expect(supportsAgentAwarenessPush()).toBe(false);
     expect(mocks.requireModule).not.toHaveBeenCalled();
   });

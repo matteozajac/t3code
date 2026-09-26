@@ -10,12 +10,27 @@ Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
+const isWatchCompanionBuild = repoEnv.T3CODE_WATCH_COMPANION === "1";
+const watchBundleIdentifier = repoEnv.T3CODE_WATCH_BUNDLE_ID?.trim() || "com.matteozajac.T3Watch";
+const watchDeveloperTeam = repoEnv.T3CODE_WATCH_TEAM_ID?.trim() || "4TCJLR98Y5";
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
 
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
+
+if (isWatchCompanionBuild) {
+  if (isIosPersonalTeamBuild) {
+    throw new Error("T3 Watch requires a paid developer team; unset T3CODE_IOS_PERSONAL_TEAM.");
+  }
+  if (!IOS_BUNDLE_IDENTIFIER_PATTERN.test(watchBundleIdentifier)) {
+    throw new Error("T3CODE_WATCH_BUNDLE_ID must be a reverse-DNS bundle identifier.");
+  }
+  if (!/^[A-Z0-9]{10}$/.test(watchDeveloperTeam)) {
+    throw new Error("T3CODE_WATCH_TEAM_ID must be a 10-character Apple developer team ID.");
+  }
+}
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
 // Android layers are rendered by scripts/export-android-icons.ts from the Icon Composer sources.
@@ -110,9 +125,11 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
-const iosBundleIdentifier = isIosPersonalTeamBuild
-  ? personalTeamBundleIdentifier!
-  : variant.iosBundleIdentifier;
+const iosBundleIdentifier = isWatchCompanionBuild
+  ? watchBundleIdentifier
+  : isIosPersonalTeamBuild
+    ? personalTeamBundleIdentifier!
+    : variant.iosBundleIdentifier;
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",
@@ -125,7 +142,8 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   {
     bundleIdentifier: `${iosBundleIdentifier}.widgets`,
     groupIdentifier: `group.${iosBundleIdentifier}`,
-    enablePushNotifications: true,
+    // The hosted relay's APNs key belongs to T3 Tools, not this fork's team.
+    enablePushNotifications: !isWatchCompanionBuild,
     // Agent activity can update many times an hour; without the
     // frequent-updates entitlement iOS throttles the update budget sooner.
     frequentUpdates: true,
@@ -210,11 +228,11 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 // family names without waiting for runtime font loading.
 
 const config: ExpoConfig = {
-  name: variant.appName,
-  slug: "t3-code",
-  platforms: ["ios", "android"],
-  scheme: variant.scheme,
-  version: "1.3.1",
+  name: isWatchCompanionBuild ? "T3 Watch" : variant.appName,
+  slug: isWatchCompanionBuild ? "t3-watch" : "t3-code",
+  platforms: isWatchCompanionBuild ? ["ios"] : ["ios", "android"],
+  scheme: isWatchCompanionBuild ? "t3watch" : variant.scheme,
+  version: isWatchCompanionBuild ? "0.2.0" : "1.3.1",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay
@@ -224,12 +242,15 @@ const config: ExpoConfig = {
   orientation: "portrait",
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
-  updates: {
-    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    checkAutomatically: "ON_LOAD",
-    fallbackToCacheTimeout: 0,
-  },
+  // A fork must never replace its watch bridge with an upstream OTA bundle.
+  updates: isWatchCompanionBuild
+    ? { enabled: false }
+    : {
+        enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
+        url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+        checkAutomatically: "ON_LOAD",
+        fallbackToCacheTimeout: 0,
+      },
   ios: {
     icon: variant.assets.iosIcon,
     supportsTablet: true,
@@ -237,16 +258,20 @@ const config: ExpoConfig = {
     // showcase capture build requires full screen (see infoPlist below).
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
+    ...(isWatchCompanionBuild ? { buildNumber: "2" } : {}),
+    // Give React Native's SDK aggregation a phone-owned destination before Pods
+    // runs, so it cannot select the companion's separate privacy manifest.
+    ...(isWatchCompanionBuild ? { privacyManifests: { NSPrivacyAccessedAPITypes: [] } } : {}),
     // Pin code signing to the T3 Tools team so non-interactive `expo run:ios`
     // does not fall back to a personal team (which cannot sign app groups,
     // Sign in with Apple, or push notification entitlements).
-    appleTeamId: "ARK85ZXQ4Z",
-    associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
-    ],
+    appleTeamId: isWatchCompanionBuild ? watchDeveloperTeam : "ARK85ZXQ4Z",
+    // The production Clerk association only authorizes T3 Tools' app IDs.
+    associatedDomains: isWatchCompanionBuild
+      ? []
+      : [`applinks:${variant.relyingParty}`, `webcredentials:${variant.relyingParty}`],
     entitlements: {
-      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
+      "keychain-access-groups": [`$(AppIdentifierPrefix)${iosBundleIdentifier}`],
     },
     infoPlist: {
       NSAppTransportSecurity: {
@@ -336,7 +361,14 @@ const config: ExpoConfig = {
     ],
     // appleSignIn must be gated here: withoutIosPersonalTeamCapabilities.cjs runs before
     // plugins earlier in this array, so it cannot strip the entitlement Clerk would add.
-    ["@clerk/expo", { theme: "./clerk-theme.json", appleSignIn: !isIosPersonalTeamBuild }],
+    [
+      "@clerk/expo",
+      {
+        theme: "./clerk-theme.json",
+        // The production Clerk Apple provider is configured for T3 Tools' identity.
+        appleSignIn: !isIosPersonalTeamBuild && !isWatchCompanionBuild,
+      },
+    ],
     "expo-web-browser",
     [
       "expo-quick-actions",
@@ -428,10 +460,14 @@ const config: ExpoConfig = {
     "./plugins/withAndroidPredictiveBackCompat.cjs",
     "./plugins/withAndroidTabletOrientation.cjs",
     ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
+    ...(isWatchCompanionBuild ? ["./plugins/withWatchCompanion.cjs"] : []),
   ],
   extra: {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
+    ...(isWatchCompanionBuild
+      ? { watchCompanionBuild: true, agentAwarenessPushEnabled: false }
+      : {}),
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,
     },
@@ -453,11 +489,11 @@ const config: ExpoConfig = {
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
-    eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    },
+    ...(!isWatchCompanionBuild
+      ? { eas: { projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454" } }
+      : {}),
   },
-  owner: "pingdotgg",
+  ...(!isWatchCompanionBuild ? { owner: "pingdotgg" } : {}),
 };
 
 export default config;

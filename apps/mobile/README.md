@@ -1,5 +1,7 @@
 # T3 Code Mobile
 
+This fork can embed a native Apple Watch companion using the iPhone's existing T3 Connect session. See [T3 Watch build and connection instructions](../../docs/operations/watch-companion.md) for the opt-in build configuration.
+
 > [!WARNING]
 > T3 Code Mobile is currently in development and is not distributed yet. If you want to try it out, you can build it from source.
 
