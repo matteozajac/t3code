@@ -71,6 +71,11 @@ export function watchThreadID(environmentId: string, threadId: string): string {
   return JSON.stringify([environmentId, threadId]);
 }
 
+export function watchProjectLabel(project: string, environment: string | null): string {
+  if (environment === null) return project.slice(0, 100);
+  return `${environment.slice(0, 40)} · ${project.slice(0, 57)}`;
+}
+
 export function parseWatchThreadID(
   value: string,
 ): { environmentId: string; threadId: string } | null {

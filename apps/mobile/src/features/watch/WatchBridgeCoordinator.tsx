@@ -23,6 +23,7 @@ import {
   parseWatchCommand,
   parseWatchThreadID,
   visibleWatchEnvironments,
+  watchProjectLabel,
   watchReplyForDelivery,
   watchThreadID,
   type WatchCommand,
@@ -62,7 +63,12 @@ const watchStateAtom = Atom.make((get) => {
     const isSelected = shell === selectedShell;
     return mapWatchThread(
       shell,
-      project,
+      watchProjectLabel(
+        project,
+        permitted.length > 1
+          ? (presentations.get(shell.environmentId)?.entry.target.label ?? "Environment")
+          : null,
+      ),
       isSelected ? detail : null,
       isSelected && detailState?.status === "live",
     );

@@ -20,6 +20,7 @@ import {
   supportedWatchApproval,
   utf8Size,
   visibleWatchEnvironments,
+  watchProjectLabel,
   watchReplyForDelivery,
   watchThreadID,
   type WatchCommand,
@@ -98,6 +99,15 @@ function command(kind: WatchCommand["kind"], overrides: Partial<WatchCommand> = 
 }
 
 describe("watch payloads", () => {
+  it("distinguishes the same project on different environments within the watch label budget", () => {
+    expect(watchProjectLabel("App", null)).toBe("App");
+    expect(watchProjectLabel("App", "Laptop")).toBe("Laptop · App");
+    expect(watchProjectLabel("App", "Desktop")).toBe("Desktop · App");
+    const longLabel = watchProjectLabel("Project ".repeat(30), "Environment ".repeat(20));
+    expect(longLabel.length).toBeLessThanOrEqual(100);
+    expect(longLabel).toContain(" · Project");
+  });
+
   it("reuses a command receipt without replaying the previous account's conversation", () => {
     const previous: WatchSnapshot = {
       environment: "Private account",
